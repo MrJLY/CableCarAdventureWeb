@@ -1,0 +1,19 @@
+{
+  "description": "缆车大冒险 - 2D 钢索缆车小游戏",
+  "compileType": "game",
+  "libVersion": "3.5.5",
+  "appid": "touristappid",
+  "projectname": "skywire-gondola",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "postcss": false,
+    "minified": true,
+    "newFeature": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "simulatorType": "wechat",
+  "simulatorPluginLibVersion": {},
+  "condition": {}
+}

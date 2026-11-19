@@ -1,0 +1,21 @@
+{
+  "name": "skywire-gondola",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "2D cable-car swing game (Skywire-like) built with Pixi.js, runs on WebGL and WeChat Mini Game.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:minigame": "vite build --config vite.minigame.config.ts && node scripts/copy-minigame.mjs"
+  },
+  "dependencies": {
+    "pixi.js": "^7.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

@@ -1,0 +1,37 @@
+# 缆车大冒险 · 文档目录
+
+2D 钢索缆车游戏（Skywire 类），Pixi.js + TypeScript + Vite，同时产出 Web 与微信小游戏。
+
+| 文档 | 内容 |
+| --- | --- |
+| [dev-notes.md](./dev-notes.md) | 开发要点：架构、坐标系、轨道/物理/障碍参数、构建与验证方式 |
+| [todo.md](./todo.md) | 待开发 / 待修复 / 待优化清单 |
+
+## 快速上手
+
+```bash
+npm install
+npm run dev              # 本地开发（默认 5173，被占用会自动顺延）
+npm run build            # Web 产物 → dist-web/
+npm run build:minigame   # 微信小游戏产物 → dist-minigame/（用微信开发者工具打开该目录）
+```
+
+## 代码结构
+
+```
+src/
+  config.ts    设计分辨率、配色、物理参数、尺寸
+  art.ts       Graphics 程序化绘制并烘焙成纹理
+  world.ts     轨道曲线 / 环轨 / 地形 / 视差背景
+  entities.ts  车厢、金币、秃鹫
+  hazards.ts   8 种障碍 + 区域（冰面/风/雾）
+  pickups.ts   随机掉落的道具（护盾/磁铁/加命）
+  ui.ts        HUD、暂停、加速减速按钮、遮罩层
+  game.ts      主循环、碰撞、分数、相机
+  main.ts      Web 入口
+  minigame.ts  微信小游戏入口
+minigame/
+  adapter.js   微信小游戏适配层（window / document / canvas / touch）
+  game.json
+  project.config.json
+```

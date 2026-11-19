@@ -1,0 +1,8 @@
+node_modules/
+dist-web/
+dist-minigame/
+.DS_Store
+*.log
+.vite/
+.idea/
+.vscode/
