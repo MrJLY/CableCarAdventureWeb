@@ -212,8 +212,11 @@ export class Game {
   private bindInput(): void {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
 
-    // 首次交互时解锁音频上下文
-    const unlock = (): void => this.sfx.resume();
+    // 首次交互时解锁音频上下文并启动 BGM
+    const unlock = (): void => {
+      this.sfx.resume();
+      this.sfx.startMusic();
+    };
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
 
@@ -494,6 +497,7 @@ export class Game {
   }
 
   destroy(): void {
+    this.sfx.stopMusic();
     this.app.ticker.remove(this.onTick);
     this.app.destroy(true, { children: true });
   }

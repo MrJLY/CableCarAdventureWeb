@@ -179,6 +179,16 @@ vs = clamp(vs, -maxSpeed, +maxSpeed)
 | 通关 | C-E-G-C 四音 |
 | 生命耗尽 | G-E-C 三音下行 |
 
+### 背景音乐
+
+`startMusic()` 用一个提前量调度器循环播放：
+
+- 112BPM，32 个八分音符一循环（4 小节 4/4）
+- `LEAD[]` 是主旋律 MIDI 音高数组（0 = 休止），三角波；`BASS{}` 是低音（sine），走向 C - Am - F - G
+- `setInterval(90ms)` 里把未来 0.4s 内的音符排进 `AudioContext` 的时间轴，避免定时器抖动导致节奏不稳
+- 上下文 `state === 'suspended'` 时直接跳过排程——`currentTime` 不走，继续排会堆成一次性爆发
+- 音乐走独立的 `musicGain`（0.42）挂到 master，静音开关一并生效
+
 ## 9. 微信小游戏
 
 - `src/minigame.ts` **第一行必须是 `import '../minigame/adapter.js'`**。ESM 按声明顺序执行，适配层必须先于 pixi.js 的模块级代码（pixi 在模块加载时就会读 `window`/`document`/`navigator`）。
