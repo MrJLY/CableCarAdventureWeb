@@ -65,6 +65,7 @@ export class Hud {
   private readonly art: Art;
   private readonly effectSlots: { sprite: Sprite; bar: Graphics }[] = [];
   private readonly effectXs: number[] = [];
+  private readonly soundGlyph = new Graphics();
   private readonly overlay = new Container();
   private readonly overlayTitle: Text;
   private readonly overlayHint: Text;
@@ -110,6 +111,11 @@ export class Hud {
     const pauseBtn = new HoldButton(30, C.panel, pauseGlyph);
     pauseBtn.position.set(DESIGN_WIDTH - 24 - panelW - 44, 50);
 
+    // 静音开关
+    this.drawSound(this.soundGlyph, false);
+    const soundBtn = new HoldButton(30, C.panel, this.soundGlyph);
+    soundBtn.position.set(DESIGN_WIDTH - 24 - panelW - 44 - 78, 50);
+
     // 减速（左）
     const brakeText = label('减速', 32);
     brakeText.anchor.set(0.5);
@@ -136,7 +142,7 @@ export class Hud {
     this.overlay.addChild(this.overlayDim, this.overlayTitle, this.overlayHint);
     this.overlay.visible = false;
 
-    this.root.addChild(heartsBox, coinBox, pauseBtn, brakeBtn, accelBtn);
+    this.root.addChild(heartsBox, coinBox, soundBtn, pauseBtn, brakeBtn, accelBtn);
 
     // 生效中的道具（底部居中）
     const effects: Sprite['texture'][] = [art.pickupShield, art.pickupMagnet];
@@ -160,6 +166,10 @@ export class Hud {
       () => this.onPause?.(),
       () => {},
     );
+    soundBtn.bind(
+      () => this.onToggleSound?.(),
+      () => {},
+    );
     this.overlay.eventMode = 'static';
     this.overlay.hitArea = new Rectangle(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.overlay.on('pointerdown', () => this.onOverlayTap?.());
@@ -167,6 +177,29 @@ export class Hud {
 
   onPause?: () => void;
   onOverlayTap?: () => void;
+  onToggleSound?: () => void;
+
+  setMuted(muted: boolean): void {
+    this.drawSound(this.soundGlyph, muted);
+  }
+
+  private drawSound(g: Graphics, muted: boolean): void {
+    g.clear();
+    g.beginFill(muted ? C.inkSoft : C.ink);
+    g.drawPolygon([-13, -5, -6, -5, 1, -12, 1, 12, -6, 5, -13, 5]);
+    g.endFill();
+    if (muted) {
+      g.lineStyle(4, C.accent, 1);
+      g.moveTo(5, -8).lineTo(15, 8);
+      g.moveTo(15, -8).lineTo(5, 8);
+      g.lineStyle(0);
+    } else {
+      g.lineStyle(3.5, C.ink, 1);
+      g.arc(1, 0, 8, -0.95, 0.95);
+      g.arc(1, 0, 14, -0.95, 0.95);
+      g.lineStyle(0);
+    }
+  }
 
   /** 按关卡配置决定显示几颗心 */
   setMaxLives(count: number): void {

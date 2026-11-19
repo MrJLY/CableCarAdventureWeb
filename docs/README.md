@@ -36,6 +36,7 @@ src/
   config.ts    设计分辨率、配色、物理参数、尺寸
   levels.ts    三个关卡的配置（轨道段 / 环轨 / 障碍 / 区域 / 道具数）
   art.ts       Graphics 程序化绘制并烘焙成纹理
+  audio.ts     程序化合成音效（WebAudio，零音频资源）
   world.ts     轨道曲线 / 环轨 / 关卡地形 / 视差背景
   entities.ts  车厢、金币、秃鹫
   hazards.ts   8 种障碍 + 区域（冰面/风/雾）

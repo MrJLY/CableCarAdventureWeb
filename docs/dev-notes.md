@@ -63,7 +63,7 @@ x(u) = x0 + w·u - (fold·w / 2π) * (1 - cos(2π·u))
 
 关卡的 x 跨度 = `Σ features[].w`，所以加段就是加长度。
 
-**改这一段必须重跑可通行性校验**（见第 9 节），因为障碍位置、岩丘高度都挂在轨道几何上。
+**改这一段必须重跑可通行性校验**（见第 10 节），因为障碍位置、岩丘高度都挂在轨道几何上。
 
 ### 2.4 环轨
 
@@ -128,7 +128,7 @@ vs = clamp(vs, -maxSpeed, +maxSpeed)
 1. **不要在环轨段内**放障碍（`atFree` 已自动保证）。
 2. **不要在浓雾段内**放机制型障碍（看不见 = 不公平），雾段只放纯视觉或宽间距障碍。
 3. 相邻机制间距建议 ≥ 450px（约 0.9s @ 620px/s），否则连续判定会变成必死。当前三关最小间距 627~835px。
-4. 摆放新障碍后，**必须重跑可通行性数值校验**（见第 9 节）。
+4. 摆放新障碍后，**必须重跑可通行性数值校验**（见第 10 节）。
 
 ### 可通行性参考值
 
@@ -162,7 +162,24 @@ vs = clamp(vs, -maxSpeed, +maxSpeed)
 - 每张纹理都用 `bake(renderer, w, h, draw)` 并显式传 `region`，保证纹理尺寸与逻辑尺寸一致（否则锚点会错位）。
 - 换图时的接口约定：`Art` 接口里的字段名即资源槽位，保持 `Texture` 类型不变即可。
 
-## 8. 微信小游戏
+## 8. 音效（`src/audio.ts`）
+
+全部**程序化合成**，项目里没有一个音频文件：
+
+- Web 端用 `AudioContext`，微信小游戏用 `wx.createWebAudioContext()`，两者都拿不到就静默降级（`failed` 标记，之后不再重试）
+- 基础单元是 `blip(频率, 时长, 波形, 增益, 延迟, 滑音目标)` 和 `noise(时长, 增益, 低通截止)`，都做指数包络避免爆音
+- 浏览器自动播放策略要求首次交互后才能出声，所以在 `Game.bindInput()` 里挂了 `pointerdown` / `keydown` 首次手势调用 `sfx.resume()`
+- HUD 右上角有静音开关，`Sfx.setEnabled()` 直接把 master gain 置 0
+
+| 事件 | 声音 |
+| --- | --- |
+| 吃金币 | 988Hz → 1319Hz 两声方波 |
+| 撞障碍 | 低通白噪声 + 180Hz 锯齿滑到 55Hz |
+| 吃道具 | 三音上行琶音，生命 784 / 磁铁 587 / 护盾 659 起始音不同 |
+| 通关 | C-E-G-C 四音 |
+| 生命耗尽 | G-E-C 三音下行 |
+
+## 9. 微信小游戏
 
 - `src/minigame.ts` **第一行必须是 `import '../minigame/adapter.js'`**。ESM 按声明顺序执行，适配层必须先于 pixi.js 的模块级代码（pixi 在模块加载时就会读 `window`/`document`/`navigator`）。
 - 构建产物是**单文件 IIFE**（`vite.minigame.config.ts`），入口 `src/minigame.ts` → `dist-minigame/game.js`。
@@ -171,7 +188,7 @@ vs = clamp(vs, -maxSpeed, +maxSpeed)
 - 小游戏里用 `resolution = 1` 且渲染尺寸取 `windowWidth * dpr`；适配层让 `getBoundingClientRect()` 返回 CSS 尺寸，Pixi 的触点映射才能对上。
 - 主包体积约 515KB（gzip 156KB），远低于 4MB 限制。
 
-## 9. 验证手段
+## 10. 验证手段
 
 ### 8.1 视觉验证（无浏览器交互）
 
@@ -198,7 +215,7 @@ npm run dev
 
 **每改一次 `PHYS.ropeLength` / `cabinCenterOffset` / `cabinRadius` / `FEATURES` / `baseGroundY`，以上都要重跑。**
 
-## 10. 性能
+## 11. 性能
 
 - 障碍按 `|cx - cabinX| > 1600` 切换 `visible`，并在各自的 `update` 内早退，避免屏幕外重建矢量。
 - 主循环用固定步长：`dt` 上限 0.05s，按 1/120s 细分，最多 3 步。

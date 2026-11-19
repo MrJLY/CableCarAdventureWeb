@@ -1,5 +1,6 @@
 import { Application, Container, Sprite } from 'pixi.js';
 import { Art, buildArt } from './art';
+import { Sfx } from './audio';
 import { C, DESIGN_HEIGHT, DESIGN_WIDTH, PICKUP, SIZE } from './config';
 import { Cabin, Coin, Eagle, InputState } from './entities';
 import { Obstacles } from './hazards';
@@ -41,6 +42,7 @@ export class Game {
   private readonly art: Art;
   private readonly root = new Container();
   private readonly hud: Hud;
+  private readonly sfx = new Sfx();
 
   /** 关卡内容都挂在 stage 下，切关时整体销毁重建 */
   private stage = new Container();
@@ -86,6 +88,11 @@ export class Game {
 
     this.hud.onPause = () => this.togglePause();
     this.hud.onOverlayTap = () => this.onOverlayTap();
+    this.hud.onToggleSound = () => {
+      this.sfx.setEnabled(this.sfx.muted);
+      this.hud.setMuted(this.sfx.muted);
+      this.sfx.resume();
+    };
 
     this.loadLevel(0);
     this.hud.showOverlay(LEVELS[0].name, '轻触屏幕开始');
@@ -204,6 +211,11 @@ export class Game {
 
   private bindInput(): void {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+
+    // 首次交互时解锁音频上下文
+    const unlock = (): void => this.sfx.resume();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
 
     const setKey = (code: string, down: boolean): boolean => {
       switch (code) {
@@ -345,6 +357,7 @@ export class Game {
         this.score += 1;
         this.hud.setCoins(this.score);
         this.spawnSpark(coin.x, coin.y);
+        this.sfx.coin();
       }
     }
   }
@@ -355,6 +368,7 @@ export class Game {
 
     this.applyPickup(kind);
     this.spawnSpark(this.cabin.bodyX, this.cabin.bodyY);
+    this.sfx.pickup(kind);
   }
 
   private applyPickup(kind: PickupKind): void {
@@ -387,8 +401,10 @@ export class Game {
     if (this.cabin.invulnerable > 0) return;
     this.lives -= 1;
     this.hud.setLives(this.lives);
+    this.sfx.crash();
     if (this.lives <= 0) {
       this.state = 'over';
+      this.sfx.over();
       this.hud.showOverlay('缆 绳 断 了', `收集金币 ${this.score}  ·  轻触重试本关`);
       return;
     }
@@ -398,6 +414,7 @@ export class Game {
 
   private clearLevel(): void {
     if (this.state !== 'playing') return;
+    this.sfx.clear();
     if (this.levelIndex + 1 < LEVELS.length) {
       this.state = 'clear';
       const next = LEVELS[this.levelIndex + 1].name;
