@@ -21,8 +21,9 @@ npm run build:minigame   # 微信小游戏产物 → dist-minigame/（用微信�
 ```
 src/
   config.ts    设计分辨率、配色、物理参数、尺寸
+  levels.ts    三个关卡的配置（轨道段 / 环轨 / 障碍 / 区域 / 道具数）
   art.ts       Graphics 程序化绘制并烘焙成纹理
-  world.ts     轨道曲线 / 环轨 / 地形 / 视差背景
+  world.ts     轨道曲线 / 环轨 / 关卡地形 / 视差背景
   entities.ts  车厢、金币、秃鹫
   hazards.ts   8 种障碍 + 区域（冰面/风/雾）
   pickups.ts   随机掉落的道具（护盾/磁铁/加命）

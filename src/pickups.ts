@@ -1,6 +1,6 @@
 import { Container, Sprite } from 'pixi.js';
 import { Art } from './art';
-import { Track } from './world';
+import { Level } from './world';
 
 export type PickupKind = 'shield' | 'life' | 'magnet';
 
@@ -30,16 +30,18 @@ export class Pickups {
   readonly layer = new Container();
   private readonly items: Pickup[] = [];
 
-  constructor(art: Art, track: Track) {
+  constructor(art: Art, level: Level) {
     const rand = mulberry32(77123);
+    const track = level.track;
+    const count = level.def.pickups;
     const tex: Record<PickupKind, Sprite['texture']> = {
       shield: art.pickupShield,
       life: art.pickupLife,
       magnet: art.pickupMagnet,
     };
 
-    for (let i = 0; i < 9; i++) {
-      const s = track.atFree(0.09 + i * 0.098 + rand() * 0.03);
+    for (let i = 0; i < count; i++) {
+      const s = track.atFree(0.1 + (i / count) * 0.82 + rand() * 0.03);
       const p = track.poseAt(s);
       const kind = POOL[Math.floor(rand() * POOL.length)];
       const sprite = new Sprite(tex[kind]);

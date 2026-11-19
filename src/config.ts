@@ -8,8 +8,8 @@ export const WORLD_LENGTH = 9000;
 /** 出生点 */
 export const START_X = 150;
 
-/** 生命值 */
-export const MAX_LIVES = 3;
+/** 生命值上限（HUD 会按关卡配置显示前 N 颗） */
+export const MAX_LIVES = 5;
 
 /** 颜色取自概念图：薄荷、粉、紫、奶白 */
 export const C = {

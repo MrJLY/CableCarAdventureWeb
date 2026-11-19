@@ -1,13 +1,15 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { Art } from './art';
-import { C, DESIGN_HEIGHT, DESIGN_WIDTH, PHYS, SIZE, WORLD_LENGTH } from './config';
+import { C, DESIGN_HEIGHT, DESIGN_WIDTH, PHYS, SIZE } from './config';
+import { Feature, LevelDef, LoopShape } from './levels';
 
-/** 起点塔 / 终点塔的 x 坐标 */
+/** 轨道起点 x（终点由各关自己的特征段决定） */
 export const TRACK_START_X = 150;
-export const TRACK_END_X = WORLD_LENGTH - 190;
 
 /** 缆线 → 车厢底部（碰撞圆最低点）的总落差：绳长 + 车厢半高 + 碰撞半径 */
 export const CABIN_DROP = PHYS.ropeLength + SIZE.cabinCenterOffset + SIZE.cabinRadius;
+
+const START_Y = 300;
 
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
@@ -29,80 +31,42 @@ export function baseGroundY(x: number): number {
   return 665 - Math.sin(x * 0.0009) * 22 - Math.sin(x * 0.0021 + 1.1) * 9;
 }
 
-/* ------------------------------------------------------------------ 轨道编排 */
-
-/**
- * 轨道由若干"特征段"手工编排：
- *   y(u) = y0 + amp * (cos(π·waves·u) - 1)
- *   x(u) = x0 + w·u - (fold·w/2π) * (1 - cos(2π·u))
- *
- * - waves 为奇数时是单调的 S 形过渡（end = y0 - 2·amp）
- * - waves 为偶数时是一个往返鼓包（end = y0）
- * - fold < 1 时 x 在中途放缓但不折返，形成平缓的横向 S 弯；两端 dx/du = w，接缝切线连续
- * - fold ≥ 1 会让 x 折返并与自身交叉，出现"压扁的小环"，视觉上不成立，不要用
- */
-interface Feature {
-  w: number;
-  amp: number;
-  waves: number;
-  fold: number;
-}
-
-const FEATURES: Feature[] = [
-  { w: 520, amp: 35, waves: 2, fold: 0 },
-  { w: 470, amp: -40, waves: 1, fold: 0 },
-  { w: 460, amp: 52, waves: 1, fold: 0 },
-  { w: 430, amp: -30, waves: 2, fold: 0 },
-  { w: 520, amp: -26, waves: 3, fold: 0.7 },
-  { w: 380, amp: 18, waves: 4, fold: 0 },
-  { w: 500, amp: -14, waves: 1, fold: 0 },
-  { w: 560, amp: 44, waves: 1, fold: 0.7 },
-  { w: 420, amp: -36, waves: 2, fold: 0 },
-  { w: 520, amp: -42, waves: 1, fold: 0 },
-  { w: 480, amp: 30, waves: 3, fold: 0 },
-  { w: 640, amp: -44, waves: 1, fold: 0.7 },
-  { w: 480, amp: 34, waves: 2, fold: 0 },
-  { w: 520, amp: 46, waves: 1, fold: 0 },
-  { w: 430, amp: -28, waves: 2, fold: 0 },
-  { w: 560, amp: -30, waves: 3, fold: 0 },
-  { w: 520, amp: 38, waves: 2, fold: 0 },
-  { w: 250, amp: 30, waves: 1, fold: 0 },
-];
-
-const START_Y = 300;
-
-/** 环轨：椭圆，横向/纵向半径可不同，避免"正圆"的呆板感 */
-const LOOP_SHAPES = [
-  { r1: 150, r2: 140 },
-  { r1: 120, r2: 148 },
-  { r1: 168, r2: 156 },
-];
+/* ------------------------------------------------------------------ 轨道 */
 
 export interface TrackPose {
   x: number;
   y: number;
 }
 
+/**
+ * 缆线轨道：按弧长参数化的折线，由若干"特征段"拼接，中间可插入椭圆环轨。
+ *
+ *   y(u) = y0 + amp * (cos(π·waves·u) - 1)
+ *   x(u) = x0 + w·u - (fold·w/2π) * (1 - cos(2π·u))
+ *
+ * - waves 奇数 → 单调的 S 形过渡（段末 y = y0 - 2·amp）；偶数 → 一个往返鼓包
+ * - fold 约 0.7 → x 中途放缓但不折返；**fold ≥ 1 会自交出"压扁的小环"，不要用**
+ * - 两式在 u = 0 / 1 处 dy/du = 0、dx/du = w，接缝切线连续
+ */
 export class Track {
   readonly px: number[] = [];
   readonly py: number[] = [];
-  private readonly cum: number[] = [];
+  readonly endX: number;
+  readonly total: number;
   /** 每段环轨占用的弧长区间 */
   readonly loops: { s0: number; s1: number }[] = [];
-  readonly total: number;
-  /** x → 该处轨道的最低点（y 最大），用于把地形压在车厢下方 */
+
+  private readonly cum: number[] = [];
   private readonly xTable: Float32Array;
   private readonly tableOffset = 400;
 
-  constructor() {
-    this.xTable = new Float32Array(WORLD_LENGTH + this.tableOffset * 2);
-
+  constructor(features: Feature[], loopShapes: LoopShape[]) {
     let x = TRACK_START_X;
     let y = START_Y;
     let lastLoopX = -1e9;
     this.push(x, y);
 
-    for (const f of FEATURES) {
+    for (const f of features) {
       const x0 = x;
       const y0 = y;
       const n = Math.max(28, Math.ceil((f.w + Math.abs(f.amp) * f.waves * 3.6) / 5));
@@ -116,23 +80,26 @@ export class Track {
       x = x0 + f.w;
       y = y0 + f.amp * (Math.cos(Math.PI * f.waves) - 1);
 
-      const shape = LOOP_SHAPES[this.loops.length];
+      const shape = loopShapes[this.loops.length];
       if (shape && y >= 338 && y <= 394 && x - lastLoopX >= 1400) {
         lastLoopX = x;
-        const cx = x;
         const cy = y - shape.r2;
         const sStart = this.cum[this.cum.length - 1];
         const steps = 96;
         for (let i = 1; i <= steps; i++) {
           const t = (i / steps) * Math.PI * 2;
-          this.push(cx + Math.sin(t) * shape.r1, cy + Math.cos(t) * shape.r2);
+          this.push(x + Math.sin(t) * shape.r1, cy + Math.cos(t) * shape.r2);
         }
         this.loops.push({ s0: sStart, s1: this.cum[this.cum.length - 1] });
       }
     }
 
+    this.endX = x;
     this.total = this.cum[this.cum.length - 1];
 
+    let maxX = 0;
+    for (let i = 0; i < this.px.length; i++) maxX = Math.max(maxX, this.px[i]);
+    this.xTable = new Float32Array(Math.ceil(maxX) + this.tableOffset * 2);
     for (let i = 0; i < this.px.length; i++) {
       const idx = Math.round(this.px[i]) + this.tableOffset;
       if (idx < 0 || idx >= this.xTable.length) continue;
@@ -173,6 +140,7 @@ export class Track {
     };
   }
 
+  /** 该 x 处轨道能达到的最低点（y 最大），供地形与摆放使用 */
   yAtX(x: number): number {
     const base = Math.round(x) + this.tableOffset;
     for (let d = 0; d < 60; d++) {
@@ -217,9 +185,7 @@ export class Track {
   }
 }
 
-export const TRACK = new Track();
-
-/* ------------------------------------------------------------------ 地形 */
+/* ------------------------------------------------------------------ 关卡地形 */
 
 export interface Peak {
   x: number;
@@ -227,39 +193,54 @@ export interface Peak {
   h: number;
 }
 
-/**
- * 粉岩石丘：只能靠速度控制的关卡里，岩丘必须是"擦身而过"——
- * 丘顶恒定低于该处车厢底部 12~58px，是压迫感不是致命物。
- */
-export const PEAKS: Peak[] = (() => {
-  const rand = mulberry32(20261118);
-  const list: Peak[] = [];
-  let x = 900;
-  while (x < WORLD_LENGTH - 700) {
-    const w = 90 + rand() * 80;
-    const clearance = 12 + rand() * 46;
-    // 取岩丘整个跨度内轨道的最低点，避免在折返段算矮
-    let trackY = 0;
-    for (let i = -w; i <= w; i += 10) trackY = Math.max(trackY, TRACK.yAtX(x + i));
-    const topY = trackY + CABIN_DROP + clearance;
-    const h = Math.min(320, Math.max(30, baseGroundY(x) - 4 - topY));
-    if (h > 32) list.push({ x, w, h });
-    x += 640 + rand() * 340;
-  }
-  return list;
-})();
-
 function peakRise(x: number, p: Peak): number {
   const d = Math.abs(x - p.x);
   if (d >= p.w) return 0;
   return p.h * 0.5 * (1 + Math.cos((Math.PI * d) / p.w));
 }
 
-/** 地面高度（含岩丘），也是碰撞面 */
-export function groundY(x: number): number {
-  let y = baseGroundY(x);
-  for (let i = 0; i < PEAKS.length; i++) y -= peakRise(x, PEAKS[i]);
-  return y;
+/**
+ * 粉岩石丘：因为只有速度控制、没有垂直闪避手段，
+ * 丘顶必须恒定低于该处车厢底部 12~58px，是压迫感不是致命物。
+ */
+function buildPeaks(track: Track, width: number): Peak[] {
+  const rand = mulberry32(20261118);
+  const list: Peak[] = [];
+  let x = 900;
+  while (x < width - 700) {
+    const w = 90 + rand() * 80;
+    const clearance = 12 + rand() * 46;
+    // 取岩丘整个跨度内轨道的最低点，避免在折返段算矮
+    let trackY = 0;
+    for (let i = -w; i <= w; i += 10) trackY = Math.max(trackY, track.yAtX(x + i));
+    const topY = trackY + CABIN_DROP + clearance;
+    const h = Math.min(320, Math.max(30, baseGroundY(x) - 4 - topY));
+    if (h > 32) list.push({ x, w, h });
+    x += 640 + rand() * 340;
+  }
+  return list;
+}
+
+export class Level {
+  readonly def: LevelDef;
+  readonly track: Track;
+  readonly peaks: Peak[];
+  /** 整个世界（含终点塔）的右边界 */
+  readonly width: number;
+
+  constructor(def: LevelDef) {
+    this.def = def;
+    this.track = new Track(def.features, def.loops);
+    this.width = this.track.endX + 190;
+    this.peaks = buildPeaks(this.track, this.width);
+  }
+
+  /** 地面高度（含岩丘），也是碰撞面 */
+  groundY(x: number): number {
+    let y = baseGroundY(x);
+    for (let i = 0; i < this.peaks.length; i++) y -= peakRise(x, this.peaks[i]);
+    return y;
+  }
 }
 
 /* ------------------------------------------------------------------ 背景与装饰 */
@@ -327,36 +308,31 @@ function buildMountainLayer(
   return g;
 }
 
-function buildGround(): Graphics {
+function buildGround(level: Level): Graphics {
   const g = new Graphics();
   const step = 12;
+  const w = level.width;
   g.beginFill(C.hillNear);
-  g.moveTo(0, groundY(0));
-  for (let x = step; x <= WORLD_LENGTH; x += step) {
-    g.lineTo(x, groundY(x));
-  }
-  g.lineTo(WORLD_LENGTH, DESIGN_HEIGHT + 60);
+  g.moveTo(0, level.groundY(0));
+  for (let x = step; x <= w; x += step) g.lineTo(x, level.groundY(x));
+  g.lineTo(w, DESIGN_HEIGHT + 60);
   g.lineTo(0, DESIGN_HEIGHT + 60);
   g.closePath();
   g.endFill();
 
   g.beginFill(C.hillShadow);
-  g.moveTo(0, groundY(0));
-  for (let x = step; x <= WORLD_LENGTH; x += step) {
-    g.lineTo(x, groundY(x));
-  }
-  for (let x = WORLD_LENGTH; x >= 0; x -= step) {
-    g.lineTo(x, groundY(x) + 14);
-  }
+  g.moveTo(0, level.groundY(0));
+  for (let x = step; x <= w; x += step) g.lineTo(x, level.groundY(x));
+  for (let x = w; x >= 0; x -= step) g.lineTo(x, level.groundY(x) + 14);
   g.closePath();
   g.endFill();
   return g;
 }
 
 /** 两侧的粉色多边形崖壁（呼应概念图） */
-function buildCliff(x0: number, x1: number, height: number, flip: boolean): Graphics {
+function buildCliff(level: Level, x0: number, x1: number, height: number, flip: boolean): Graphics {
   const g = new Graphics();
-  const gy = groundY(flip ? x1 : x0) + 30;
+  const gy = level.groundY(flip ? x1 : x0) + 30;
   const pts: number[] = [];
   const n = 5;
   for (let i = 0; i <= n; i++) {
@@ -379,32 +355,32 @@ function buildCliff(x0: number, x1: number, height: number, flip: boolean): Grap
   return g;
 }
 
-function buildRocks(): Graphics {
+function buildRocks(level: Level): Graphics {
   const g = new Graphics();
-  for (const p of PEAKS) {
+  for (const p of level.peaks) {
     const pts: number[] = [];
-    for (let x = p.x - p.w; x <= p.x + p.w; x += 10) pts.push(x, groundY(x));
+    for (let x = p.x - p.w; x <= p.x + p.w; x += 10) pts.push(x, level.groundY(x));
     for (let x = p.x + p.w; x >= p.x - p.w; x -= 10) {
-      pts.push(x, Math.max(baseGroundY(x) + 8, groundY(x) + 8));
+      pts.push(x, Math.max(baseGroundY(x) + 8, level.groundY(x) + 8));
     }
     g.beginFill(C.rockMid).drawPolygon(pts).endFill();
 
-    const topY = groundY(p.x);
+    const topY = level.groundY(p.x);
     const baseY = Math.max(baseGroundY(p.x), topY) + 24;
     g.beginFill(C.rockLight, 0.6);
-    g.drawPolygon([p.x, topY, p.x - p.w * 0.85, groundY(p.x - p.w * 0.85), p.x - p.w * 0.15, baseY]);
+    g.drawPolygon([p.x, topY, p.x - p.w * 0.85, level.groundY(p.x - p.w * 0.85), p.x - p.w * 0.15, baseY]);
     g.endFill();
     g.beginFill(C.rockDark, 0.35);
-    g.drawPolygon([p.x, topY, p.x + p.w * 0.85, groundY(p.x + p.w * 0.85), p.x + p.w * 0.22, baseY + 8]);
+    g.drawPolygon([p.x, topY, p.x + p.w * 0.85, level.groundY(p.x + p.w * 0.85), p.x + p.w * 0.22, baseY + 8]);
     g.endFill();
   }
   return g;
 }
 
-function buildTower(x: number, topY: number): Container {
+function buildTower(level: Level, x: number, topY: number): Container {
   const c = new Container();
   const top = topY - 46;
-  const bottom = groundY(x) + 10;
+  const bottom = level.groundY(x) + 10;
   const g = new Graphics();
   const halfTop = 16;
   const halfBottom = 34;
@@ -446,7 +422,7 @@ function buildWire(track: Track): Graphics {
 
 export class World {
   readonly sky: Graphics;
-  readonly track = TRACK;
+  readonly track: Track;
   readonly farLayer = new Container();
   readonly midLayer = new Container();
   readonly farCloudLayer = new Container();
@@ -455,36 +431,36 @@ export class World {
   readonly trackLayer = new Container();
   readonly actorLayer = new Container();
 
-  constructor(art: Art) {
+  constructor(art: Art, level: Level) {
     this.sky = buildSky();
+    this.track = level.track;
 
-    const farWidth = WORLD_LENGTH * 0.2 + DESIGN_WIDTH + 200;
-    const midWidth = WORLD_LENGTH * 0.45 + DESIGN_WIDTH + 200;
+    const farWidth = level.width * 0.2 + DESIGN_WIDTH + 200;
+    const midWidth = level.width * 0.45 + DESIGN_WIDTH + 200;
 
     this.farLayer.addChild(buildMountainLayer(farWidth, 1.7, 665, C.mountainA, 0xffffff));
     this.midLayer.addChild(buildMountainLayer(midWidth, 4.2, 700, C.mountainB, 0xffffff));
 
-    this.buildClouds(this.farCloudLayer, art, WORLD_LENGTH * 0.3 + DESIGN_WIDTH, 11, 0.9);
-    this.buildClouds(this.nearCloudLayer, art, WORLD_LENGTH * 0.7 + DESIGN_WIDTH, 23, 0.55);
+    this.buildClouds(this.farCloudLayer, art, level.width * 0.3 + DESIGN_WIDTH, 11, 0.9);
+    this.buildClouds(this.nearCloudLayer, art, level.width * 0.7 + DESIGN_WIDTH, 23, 0.55);
 
-    this.terrainLayer.addChild(buildCliff(0, 260, 150, false));
-    this.terrainLayer.addChild(buildCliff(WORLD_LENGTH - 300, WORLD_LENGTH, 170, true));
-    this.terrainLayer.addChild(buildGround());
-    this.terrainLayer.addChild(buildRocks());
-    this.decorate(this.terrainLayer, art);
+    this.terrainLayer.addChild(buildCliff(level, 0, 260, 150, false));
+    this.terrainLayer.addChild(buildCliff(level, level.width - 300, level.width, 170, true));
+    this.terrainLayer.addChild(buildGround(level));
+    this.terrainLayer.addChild(buildRocks(level));
+    this.decorate(this.terrainLayer, art, level);
 
-    const t = this.track;
-    const startTop = t.poseAt(0).y;
-    const endTop = t.poseAt(t.total).y;
-    this.trackLayer.addChild(buildTower(TRACK_START_X, startTop));
-    this.trackLayer.addChild(buildTower(TRACK_END_X, endTop));
-    this.trackLayer.addChild(buildWire(t));
+    const startTop = level.track.poseAt(0).y;
+    const endTop = level.track.poseAt(level.track.total).y;
+    this.trackLayer.addChild(buildTower(level, TRACK_START_X, startTop));
+    this.trackLayer.addChild(buildTower(level, level.track.endX, endTop));
+    this.trackLayer.addChild(buildWire(level.track));
 
     const startFlag = new Sprite(art.flag);
     startFlag.position.set(TRACK_START_X - 20, startTop - 118);
     startFlag.scale.set(0.55);
     const endFlag = new Sprite(art.flag);
-    endFlag.position.set(TRACK_END_X - 20, endTop - 118);
+    endFlag.position.set(level.track.endX - 20, endTop - 118);
     endFlag.scale.set(0.55);
     this.trackLayer.addChild(startFlag, endFlag);
   }
@@ -503,15 +479,15 @@ export class World {
     }
   }
 
-  private decorate(layer: Container, art: Art): void {
+  private decorate(layer: Container, art: Art, level: Level): void {
     const rand = mulberry32(97);
-    for (let x = 60; x < WORLD_LENGTH; x += 40 + rand() * 90) {
-      if (baseGroundY(x) - groundY(x) > 8) continue;
+    for (let x = 60; x < level.width; x += 40 + rand() * 90) {
+      if (baseGroundY(x) - level.groundY(x) > 8) continue;
       const isPine = rand() > 0.45;
       const s = new Sprite(isPine ? art.pine : art.bush);
       s.anchor.set(0.5, 1);
       s.scale.set(0.55 + rand() * 0.55);
-      s.position.set(x, groundY(x) + 8);
+      s.position.set(x, level.groundY(x) + 8);
       s.alpha = 0.95;
       layer.addChild(s);
     }

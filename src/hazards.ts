@@ -1,7 +1,8 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { Art } from './art';
 import { C } from './config';
-import { groundY, Track, TrackPose } from './world';
+import { ZoneKind } from './levels';
+import { Level, Track, TrackPose } from './world';
 
 const CABIN_R = 44;
 /** 超出这个横向距离就不更新（省掉屏幕外的矢量重建） */
@@ -151,7 +152,7 @@ class Vent implements Hazard {
   private blasting = false;
   private power = 0;
 
-  constructor(art: Art, x: number, seed: number) {
+  constructor(art: Art, x: number, groundY: (v: number) => number, seed: number) {
     this.cx = x;
     this.vy = groundY(x);
     this.phase = seed * this.period;
@@ -202,7 +203,12 @@ class RockZone implements Hazard {
   private readonly len: number;
   private readonly fallTime = 1.35;
 
-  constructor(art: Art, x: number, seed: number) {
+  constructor(
+    art: Art,
+    x: number,
+    groundY: (v: number) => number,
+    seed: number,
+  ) {
     this.cx = x;
     const top = -80;
     const bottom = groundY(x) + 60;
@@ -299,8 +305,6 @@ class Swarm {
 
 /* ------------------------------------------------------------------ 区域 */
 
-type ZoneKind = 'ice' | 'wind' | 'fog';
-
 interface Zone {
   kind: ZoneKind;
   s0: number;
@@ -308,7 +312,8 @@ interface Zone {
   power: number;
 }
 
-function buildIce(x0: number, x1: number): Graphics {
+function buildIce(level: Level, x0: number, x1: number): Graphics {
+  const groundY = (v: number): number => level.groundY(v);
   const g = new Graphics();
   const step = 16;
   g.beginFill(0xd6f2ff, 0.8);
@@ -378,42 +383,28 @@ export class Obstacles {
   private readonly swarmTo: number;
   private swarmSpent = false;
 
-  constructor(art: Art, track: Track) {
-    const atFree = (f: number): number => track.atFree(f);
+  constructor(art: Art, level: Level) {
+    const track = level.track;
 
-    const layout: [number, 'hammer' | 'gate' | 'vent' | 'rock', number][] = [
-      [0.05, 'hammer', 0.2],
-      [0.13, 'gate', 0.3],
-      [0.235, 'vent', 0.1],
-      [0.33, 'rock', 0.4],
-      [0.42, 'hammer', 0.6],
-      [0.52, 'gate', 0.75],
-      [0.62, 'vent', 0.45],
-      [0.72, 'rock', 0.8],
-      [0.83, 'hammer', 0.35],
-      [0.95, 'hammer', 0.5],
-    ];
-
-    for (const [f, kind, seed] of layout) {
-      const pose = track.poseAt(atFree(f));
+    for (const [f, kind, seed] of level.def.obstacles) {
+      const pose = track.poseAt(track.atFree(f));
       let h: Hazard;
       if (kind === 'hammer') h = new Hammer(art, pose, seed);
       else if (kind === 'gate') h = new Gate(pose, seed);
-      else if (kind === 'vent') h = new Vent(art, pose.x, seed);
-      else h = new RockZone(art, pose.x, seed);
+      else if (kind === 'vent') h = new Vent(art, pose.x, level.groundY.bind(level), seed);
+      else h = new RockZone(art, pose.x, level.groundY.bind(level), seed);
       this.items.push(h);
       this.below.addChild(h.view);
     }
 
-    this.addZone('fog', atFree(0.165), atFree(0.2), 0, track, art);
-    this.addZone('ice', atFree(0.56), atFree(0.6), 0, track, art);
-    this.addZone('wind', atFree(0.64), atFree(0.675), 300, track, art);
-    this.addZone('wind', atFree(0.78), atFree(0.81), -320, track, art);
+    for (const z of level.def.zones) {
+      this.addZone(z.kind, track.atFree(z.f0), track.atFree(z.f1), z.power, level, art);
+    }
 
     this.swarm = new Swarm(art, track);
     this.below.addChild(this.swarm.view);
-    this.swarmFrom = atFree(0.875);
-    this.swarmTo = atFree(0.94);
+    this.swarmFrom = level.def.swarm ? track.atFree(level.def.swarm[0]) : 0;
+    this.swarmTo = level.def.swarm ? track.atFree(level.def.swarm[1]) : 0;
   }
 
   private addZone(
@@ -421,7 +412,7 @@ export class Obstacles {
     s0: number,
     s1: number,
     power: number,
-    track: Track,
+    level: Level,
     art: Art,
   ): void {
     this.zones.push({ kind, s0, s1, power });
@@ -429,13 +420,13 @@ export class Obstacles {
     let x0 = Infinity;
     let x1 = -Infinity;
     for (let i = 0; i <= 24; i++) {
-      const p = track.poseAt(s0 + ((s1 - s0) * i) / 24);
+      const p = level.track.poseAt(s0 + ((s1 - s0) * i) / 24);
       x0 = Math.min(x0, p.x);
       x1 = Math.max(x1, p.x);
     }
 
     if (kind === 'fog') this.above.addChild(buildFog(art, x0, x1));
-    else if (kind === 'ice') this.below.addChild(buildIce(x0, x1));
+    else if (kind === 'ice') this.below.addChild(buildIce(level, x0, x1));
     else this.below.addChild(buildWind(x0, x1, power > 0 ? 1 : -1));
   }
 

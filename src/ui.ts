@@ -59,6 +59,8 @@ export class Hud {
 
   /** 生命 */
   private readonly hearts: Sprite[] = [];
+  private readonly heartsBg: Graphics;
+  private maxLives = 3;
   private readonly coinText: Text;
   private readonly art: Art;
   private readonly effectSlots: { sprite: Sprite; bar: Graphics }[] = [];
@@ -73,14 +75,17 @@ export class Hud {
     // 生命
     const heartsBox = new Container();
     heartsBox.position.set(24, 20);
-    heartsBox.addChild(roundPanel(MAX_LIVES * 46 + 28, 60, 30));
+    this.heartsBg = new Graphics();
+    heartsBox.addChild(this.heartsBg);
     for (let i = 0; i < MAX_LIVES; i++) {
       const s = new Sprite(art.heart);
       s.anchor.set(0.5);
       s.position.set(46 + i * 46, 30);
+      s.visible = false;
       this.hearts.push(s);
       heartsBox.addChild(s);
     }
+    this.setMaxLives(3);
 
     // 金币
     const coinBox = new Container();
@@ -163,8 +168,22 @@ export class Hud {
   onPause?: () => void;
   onOverlayTap?: () => void;
 
+  /** 按关卡配置决定显示几颗心 */
+  setMaxLives(count: number): void {
+    this.maxLives = Math.max(1, Math.min(MAX_LIVES, count));
+    this.heartsBg.clear();
+    const w = this.maxLives * 46 + 28;
+    this.heartsBg.beginFill(C.panelEdge).drawRoundedRect(0, 0, w, 60, 30).endFill();
+    this.heartsBg.beginFill(C.panel).drawRoundedRect(3, 3, w - 6, 54, 27).endFill();
+    this.heartsBg.beginFill(0xffffff, 0.75).drawRoundedRect(9, 8, w - 18, 22, 14).endFill();
+    this.hearts.forEach((h, i) => {
+      h.visible = i < this.maxLives;
+    });
+  }
+
   setLives(lives: number): void {
     this.hearts.forEach((h, i) => {
+      if (i >= this.maxLives) return;
       h.texture = i < lives ? this.art.heart : this.art.heartEmpty;
     });
   }
